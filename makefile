@@ -1,13 +1,33 @@
 CXX?=g++
 CXXFLAGS?=-Wall -O2
 LIB?=hidapi
+UNAME := $(shell uname)
+
 ifeq ($(LIB),libusb)
 	CPPFLAGS=-Dlibusb
 	LIBS=-lusb-1.0
 else
 	CPPFLAGS=-Dhidapi
-	LIBS=-lhidapi-hidraw
+	ifeq ($(UNAME),Darwin)
+		LIBS = -lhidapi
+	else
+		LIBS = -lhidapi-hidraw
+	endif
 endif
+
+ifeq ($(UNAME),Darwin)
+	DYNAMIC_LIBRARY_EXTENSION=dylib
+else
+	DYNAMIC_LIBRARY_EXTENSION=so
+endif
+
+
+ifeq ($(UNAME),Darwin)
+	LINK_FLAGS = -Wl,-install_name,lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
+else
+	LINK_FLAGS = -Wl,-soname,lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
+endif
+
 SYSTEMDDIR?=/usr/lib/systemd
 
 PREFIX?=$(DESTDIR)/usr
@@ -15,7 +35,7 @@ libdir?=$(PREFIX)/lib
 includedir?=$(PREFIX)/include
 
 # Program & versioning information
-PROGN=g810-led
+PROGN=g213-led
 MAJOR=0
 MINOR=4
 MICRO=3
@@ -26,7 +46,7 @@ LIBSRCS=src/classes/*.cpp
 
 .PHONY: all bin debug clean setup install uninstall lib install-lib install-dev
 
-all: lib/lib$(PROGN).so bin/$(PROGN)
+all: lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION) bin/$(PROGN)
 
 bin: bin/$(PROGN)
 
@@ -37,16 +57,16 @@ bin/$(PROGN): $(APPSRCS) $(LIBSRCS)
 debug: CXXFLAGS += -g -Wextra -pedantic
 debug: bin/$(PROGN)
 
-lib/lib$(PROGN).so: $(LIBSRCS)
+lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION): $(LIBSRCS)
 	@mkdir -p lib
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) -fPIC -shared -Wl,-soname,lib$(PROGN).so -o lib/lib$(PROGN).so.$(MAJOR).$(MINOR).$(MICRO) $^ $(LIBS)
-	@ln -sf lib$(PROGN).so.$(MAJOR).$(MINOR).$(MICRO) lib/lib$(PROGN).so
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) -fPIC -shared $(LINK_FLAGS) -o lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION).$(MAJOR).$(MINOR).$(MICRO) $^ $(LIBS)
+	@ln -sf lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION).$(MAJOR).$(MINOR).$(MICRO) lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
 
-bin-linked: lib/lib$(PROGN).so
+bin-linked: lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
 	@mkdir -p bin
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(APPSRCS) -o bin/$(PROGN) $(LIBS) -L./lib -l$(PROGN)
 
-lib: lib/lib$(PROGN).so
+lib: lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
 
 clean:
 	@rm -rf bin
@@ -75,8 +95,8 @@ setup:
 
 install-lib: lib
 	@install -m 755 -d $(libdir)
-	@install -m 644 lib/lib$(PROGN).so.$(MAJOR).$(MINOR).$(MICRO) $(libdir)/
-	@ln -sf lib$(PROGN).so.$(MAJOR).$(MINOR).$(MICRO) $(libdir)/lib$(PROGN).so
+	@install -m 644 lib/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION).$(MAJOR).$(MINOR).$(MICRO) $(libdir)/
+	@ln -sf lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION).$(MAJOR).$(MINOR).$(MICRO) $(libdir)/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)
 
 install-dev: install-lib
 	@mkdir -p $(includedir)/$(PROGN)/
@@ -94,7 +114,7 @@ install: setup
 		systemctl enable $(PROGN)-reboot
 
 uninstall-lib:
-	@rm -f $(libdir)/lib$(PROGN).so*
+	@rm -f $(libdir)/lib$(PROGN).$(DYNAMIC_LIBRARY_EXTENSION)*
 
 uninstall-dev:
 	@rm -rf $(includedir)/$(PROGN)
